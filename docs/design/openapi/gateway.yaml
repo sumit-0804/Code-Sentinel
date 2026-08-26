@@ -1,0 +1,881 @@
+openapi: 3.1.0
+info:
+  title: Code-Sentinel API Gateway
+  version: 1.0.0
+  description: >
+    The single entry point for all three clients — the GitHub App, the VS Code extension and the
+    Next.js dashboard (FR-GW-01). Nothing downstream is reachable from outside; the gateway
+    authenticates, rate-limits and forwards to the orchestrator, then relays the answer back
+    (FR-GW-02, FR-GW-04, FR-GW-05).
+
+    Two authentication schemes are in use. GitHub webhook traffic is verified by HMAC-SHA256
+    signature (FR-GW-03) and carries no session. Dashboard traffic uses a session cookie and VS
+    Code traffic uses a personal API key; both resolve to a user and an organization, and every
+    read is scoped to that organization (NFR-13).
+  contact:
+    name: Team Code-Sentinel
+  license:
+    name: Academic project — DAIICT
+
+servers:
+  - url: https://api.codesentinel.dev
+    description: Production
+  - url: http://localhost:3000
+    description: Local development
+
+tags:
+  - name: Webhooks
+    description: Inbound GitHub events. UC-1.
+  - name: Reviews
+    description: Triggering reviews and reading combined reports. UC-1, UC-2, UC-5.
+  - name: Findings
+    description: Accepting or rejecting individual suggested fixes. UC-3.
+  - name: Repositories
+    description: Repository listing and per-repository agent configuration. UC-4.
+  - name: Account
+    description: Identity, organizations and API keys.
+  - name: Service
+    description: Health.
+
+paths:
+
+  # -------------------------------------------------------------------------
+  # UC-1 — Automatic pull request review
+  # -------------------------------------------------------------------------
+
+  /webhooks/github:
+    post:
+      tags: [Webhooks]
+      operationId: receiveGithubWebhook
+      summary: Receive a GitHub webhook event
+      description: >
+        Subscribed to pull_request (opened, synchronize, reopened) plus the installation events
+        (FR-GH-01). The HMAC-SHA256 signature is verified before the payload is read at all; an
+        unsigned or badly signed request is rejected and never forwarded (FR-GW-03).
+
+        Returns 202 as soon as the event is queued. GitHub gets its response in well under its
+        delivery timeout, and the review itself runs asynchronously.
+      security: []
+      parameters:
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema:
+            type: string
+            example: pull_request
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Used as the idempotency key, so a redelivery does not start a second review.
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema:
+            type: string
+            example: sha256=7d38cdd689735b008b3c702edd92eea23791c5f6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw GitHub webhook payload. Read only after signature verification.
+              additionalProperties: true
+      responses:
+        '202':
+          description: Event accepted. A review job was started, or the event needed no action.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted:
+                    type: boolean
+                  reviewId:
+                    type: string
+                    format: uuid
+                    description: Absent when the event did not warrant a review.
+                  action:
+                    type: string
+                    enum: [review_started, duplicate_ignored, event_ignored, repository_disabled]
+        '401':
+          description: Signature verification failed.
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/Error'
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+
+  # -------------------------------------------------------------------------
+  # UC-2 — On-demand review from VS Code / dashboard
+  # -------------------------------------------------------------------------
+
+  /v1/reviews:
+    post:
+      tags: [Reviews]
+      operationId: createReview
+      summary: Request an on-demand review
+      description: >
+        Backs "CodeSentinel: Review current file" in the VS Code extension (FR-VSC-01) and manual
+        submission from the dashboard. Accepts either a file set with contents, or a repository
+        and commit range the gateway resolves through the GitHub API.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '202':
+          description: Review accepted and running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewAccepted'
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+
+    get:
+      tags: [Reviews]
+      operationId: listReviews
+      summary: List review history
+      description: >
+        Every review across every repository the caller's organization has CodeSentinel installed
+        on (FR-WEB-01), filterable by repository, status, severity and date (UC-5, AC-09). An empty
+        list is a normal result and drives the dashboard's empty state.
+      parameters:
+        - name: repositoryId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [queued, running, completed, partial, failed]
+          style: form
+          explode: false
+        - name: minSeverity
+          in: query
+          description: Return only reviews containing at least one finding at this severity or above.
+          schema:
+            $ref: './common.yaml#/components/schemas/Severity'
+        - name: trigger
+          in: query
+          schema:
+            type: string
+            enum: [github_pull_request, vscode_on_demand, dashboard_manual]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Matching reviews, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, pageInfo]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReviewListItem'
+                  pageInfo:
+                    $ref: './common.yaml#/components/schemas/PageInfo'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+
+  /v1/reviews/{reviewId}:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      tags: [Reviews]
+      operationId: getReview
+      summary: Get the combined review report
+      description: >
+        The full de-duplicated, severity-ranked report for one review (FR-WEB-04, FR-ORC-03,
+        FR-ORC-04). This is the same payload the VS Code webview renders and the dashboard's report
+        detail page shows, so the two surfaces cannot disagree (NFR-08).
+
+        While the review is still running the response carries the agents that have already
+        answered, so a client can render progress without a second endpoint.
+      parameters:
+        - name: agent
+          in: query
+          description: Return findings from these agents only. The dashboard's per-agent filter.
+          schema:
+            type: array
+            items:
+              $ref: './common.yaml#/components/schemas/AgentKind'
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Combined report.
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/CombinedReport'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
+  /v1/reviews/{reviewId}/events:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      tags: [Reviews]
+      operationId: streamReviewEvents
+      summary: Stream review progress (SSE)
+      description: >
+        Server-sent events emitted as each agent returns, so the VS Code panel and the dashboard
+        can fill in results as they arrive instead of polling. Closes when the review reaches a
+        terminal state.
+      responses:
+        '200':
+          description: Event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event: agent_completed
+                  data: {"agent":"style","status":"succeeded","findingsCount":8,"latencyMs":1420}
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
+  /v1/reviews/{reviewId}/style-fixes:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      tags: [Reviews]
+      operationId: applyStyleFixes
+      summary: Apply all deterministic style fixes
+      description: >
+        Backs the extension's one-click "Auto-fix style" action (FR-VSC-04). Returns the patched
+        file contents for the editor to write into the open buffer; nothing is committed here.
+        No LLM is involved anywhere in this path (NFR-07).
+      responses:
+        '200':
+          description: Patched files.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files, fixedCount]
+                properties:
+                  fixedCount:
+                    type: integer
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, content]
+                      properties:
+                        path:
+                          type: string
+                        content:
+                          type: string
+                        fixesApplied:
+                          type: integer
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          description: The review has not finished, so its style fixes are not final yet.
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/Error'
+
+  # -------------------------------------------------------------------------
+  # UC-3 — Apply or reject an AI-suggested fix
+  # -------------------------------------------------------------------------
+
+  /v1/findings/{findingId}/suggestion/accept:
+    parameters:
+      - $ref: '#/components/parameters/FindingId'
+    post:
+      tags: [Findings]
+      operationId: acceptSuggestion
+      summary: Accept a suggested fix
+      description: >
+        Records the developer's decision and, for a GitHub-triggered review, commits the suggestion
+        to the pull request branch on their behalf. This endpoint is the only path by which
+        CodeSentinel writes to a PR branch, and it runs only on an explicit action (FR-GH-04).
+
+        In VS Code the extension applies the change to the editor buffer itself and calls this
+        endpoint purely to record the outcome, which is what lets a later review mark the finding
+        resolved.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target:
+                  type: string
+                  enum: [github_branch, editor_buffer]
+                  default: github_branch
+                  description: editor_buffer records the decision without touching GitHub.
+      responses:
+        '200':
+          description: Decision recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestionDecision'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          description: Already accepted or rejected, or superseded by a newer commit.
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/Error'
+
+  /v1/findings/{findingId}/suggestion/reject:
+    parameters:
+      - $ref: '#/components/parameters/FindingId'
+    post:
+      tags: [Findings]
+      operationId: rejectSuggestion
+      summary: Reject a suggested fix
+      description: >
+        The finding stays visible in the report but no code changes (UC-3 alternate flow, AC-04).
+        An optional reason feeds back into rule tuning.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  enum: [false_positive, not_applicable, will_fix_manually, other]
+                comment:
+                  type: string
+      responses:
+        '200':
+          description: Decision recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestionDecision'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+        '409':
+          description: Already resolved.
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/Error'
+
+  # -------------------------------------------------------------------------
+  # UC-4 — Configure repository and agent settings
+  # -------------------------------------------------------------------------
+
+  /v1/repositories:
+    get:
+      tags: [Repositories]
+      operationId: listRepositories
+      summary: List repositories CodeSentinel is installed on
+      parameters:
+        - name: enabledOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Repositories visible to the caller's organization.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Repository'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+
+  /v1/repositories/{repositoryId}/config:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      tags: [Repositories]
+      operationId: getRepositoryConfig
+      summary: Read agent configuration for a repository
+      description: >
+        Returns the effective configuration and where each value came from, so the Agent Config
+        page can show "inherited from platform default" rather than an unexplained 80%.
+      responses:
+        '200':
+          description: Effective configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryConfig'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
+    put:
+      tags: [Repositories]
+      operationId: updateRepositoryConfig
+      summary: Update agent configuration for a repository
+      description: >
+        Enables or disables individual agents (FR-WEB-02) and optionally overrides the confidence
+        threshold (FR-WEB-03). Requires the admin role in the owning organization.
+
+        Disabling every agent is rejected, because a repository with no agents would produce empty
+        reports rather than an obvious error (UC-4 exception flow). Omitting
+        confidenceThresholdOverride, or sending null, restores inheritance from the platform
+        default of 0.8 (FR-ORC-06).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepositoryConfigUpdate'
+      responses:
+        '200':
+          description: Configuration saved. Applies from the next review job onwards (AC-07).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryConfig'
+        '400':
+          description: Validation failed, for example every agent disabled.
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/Error'
+              example:
+                code: no_agents_enabled
+                message: At least one agent must stay enabled.
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
+  # -------------------------------------------------------------------------
+  # Account
+  # -------------------------------------------------------------------------
+
+  /v1/me:
+    get:
+      tags: [Account]
+      operationId: getCurrentUser
+      summary: Identify the caller
+      description: Used by the dashboard on load and by the VS Code extension to confirm its API key.
+      responses:
+        '200':
+          description: Caller identity and organization memberships.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+
+  /v1/me/api-keys:
+    get:
+      tags: [Account]
+      operationId: listApiKeys
+      summary: List the caller's API keys
+      responses:
+        '200':
+          description: Keys, with prefixes only. The secret is shown once at creation and never again.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiKey'
+    post:
+      tags: [Account]
+      operationId: createApiKey
+      summary: Create an API key for the VS Code extension
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label:
+                  type: string
+                  example: Work laptop
+      responses:
+        '201':
+          description: Key created. The plaintext secret appears in this response only.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiKey'
+                  - type: object
+                    properties:
+                      secret:
+                        type: string
+
+  /v1/me/api-keys/{keyId}:
+    parameters:
+      - name: keyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [Account]
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      responses:
+        '204':
+          description: Revoked.
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
+  /healthz:
+    get:
+      tags: [Service]
+      operationId: gatewayHealth
+      summary: Liveness and readiness probe
+      security: []
+      responses:
+        '200':
+          description: Gateway is ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded, unavailable]
+                  version:
+                    type: string
+                  dependencies:
+                    type: object
+                    additionalProperties:
+                      type: string
+
+security:
+  - sessionCookie: []
+  - apiKey: []
+
+components:
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: cs_session
+      description: Dashboard sessions, established through GitHub OAuth.
+    apiKey:
+      type: http
+      scheme: bearer
+      description: >
+        Personal API key used by the VS Code extension, sent in the Authorization header as a
+        bearer token with the cs_live_ prefix.
+
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      schema:
+        type: string
+    ReviewId:
+      name: reviewId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FindingId:
+      name: findingId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RepositoryId:
+      name: repositoryId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+
+    CreateReviewRequest:
+      type: object
+      required: [repositoryId, files]
+      properties:
+        repositoryId:
+          type: string
+          format: uuid
+        files:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: './common.yaml#/components/schemas/ChangedFile'
+        headSha:
+          type: string
+          description: Commit the files came from, when the workspace is a clean checkout.
+        agents:
+          type: array
+          description: Restrict this one review to a subset. Repository configuration still applies on top.
+          items:
+            $ref: './common.yaml#/components/schemas/AgentKind'
+
+    ReviewAccepted:
+      type: object
+      required: [reviewId, status]
+      properties:
+        reviewId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running]
+        pollUrl:
+          type: string
+          format: uri
+        eventsUrl:
+          type: string
+          format: uri
+
+    ReviewListItem:
+      type: object
+      required: [reviewId, repositoryFullName, status, createdAt, summary]
+      properties:
+        reviewId:
+          type: string
+          format: uuid
+        repositoryFullName:
+          type: string
+        trigger:
+          type: string
+          enum: [github_pull_request, vscode_on_demand, dashboard_manual]
+        pullRequestNumber:
+          type: integer
+        pullRequestTitle:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, partial, failed]
+        checkConclusion:
+          type: string
+          enum: [pass, fail, neutral]
+        summary:
+          $ref: './common.yaml#/components/schemas/ReviewSummary'
+        durationMs:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    SuggestionDecision:
+      type: object
+      required: [findingId, suggestionId, state]
+      properties:
+        findingId:
+          type: string
+          format: uuid
+        suggestionId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [accepted, rejected]
+        commitSha:
+          type: string
+          description: Present when the change was committed to the pull request branch.
+        resolvedAt:
+          type: string
+          format: date-time
+
+    Repository:
+      type: object
+      required: [repositoryId, fullName, reviewEnabled]
+      properties:
+        repositoryId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+          example: code-sentinel/consumer-api
+        defaultBranch:
+          type: string
+        primaryLanguage:
+          type: string
+        isPrivate:
+          type: boolean
+        reviewEnabled:
+          type: boolean
+        lastReviewAt:
+          type: string
+          format: date-time
+
+    AgentSetting:
+      type: object
+      required: [agent, enabled]
+      properties:
+        agent:
+          $ref: './common.yaml#/components/schemas/AgentKind'
+        enabled:
+          type: boolean
+
+    RepositoryConfig:
+      type: object
+      required: [repositoryId, agents, effectiveConfidenceThreshold, thresholdSource]
+      properties:
+        repositoryId:
+          type: string
+          format: uuid
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSetting'
+        confidenceThresholdOverride:
+          oneOf:
+            - $ref: './common.yaml#/components/schemas/Confidence'
+            - type: 'null'
+          description: null means no override is set for this repository.
+        effectiveConfidenceThreshold:
+          $ref: './common.yaml#/components/schemas/Confidence'
+        thresholdSource:
+          type: string
+          enum: [repository_override, organization_default, platform_default]
+        agentTimeoutMs:
+          type: integer
+        autoFixStyle:
+          type: boolean
+        postInlineComments:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+
+    RepositoryConfigUpdate:
+      type: object
+      properties:
+        agents:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AgentSetting'
+        confidenceThresholdOverride:
+          oneOf:
+            - $ref: './common.yaml#/components/schemas/Confidence'
+            - type: 'null'
+        agentTimeoutMs:
+          type: integer
+          minimum: 1000
+          maximum: 120000
+        autoFixStyle:
+          type: boolean
+        postInlineComments:
+          type: boolean
+
+    CurrentUser:
+      type: object
+      required: [userId, githubLogin, organizations]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        githubLogin:
+          type: string
+        email:
+          type: string
+        avatarUrl:
+          type: string
+        organizations:
+          type: array
+          items:
+            type: object
+            required: [organizationId, displayName, role]
+            properties:
+              organizationId:
+                type: string
+                format: uuid
+              displayName:
+                type: string
+              role:
+                type: string
+                enum: [admin, member]
+
+    ApiKey:
+      type: object
+      required: [keyId, label, keyPrefix, createdAt]
+      properties:
+        keyId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        keyPrefix:
+          type: string
+          example: cs_live_9f2a
+        lastUsedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
