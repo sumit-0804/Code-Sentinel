@@ -1,0 +1,52 @@
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#dce7f7","primaryBorderColor":"#4a6fa5","lineColor":"#6b7280","primaryTextColor":"#1a1a1a","actorBkg":"#dce7f7","actorBorder":"#4a6fa5","noteBkgColor":"#fffdf2","noteBorderColor":"#e0cf92"},"sequence":{"actorMargin":46,"width":170,"boxMargin":10}} }%%
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant EXT as VS Code Extension
+    participant WV as Webview Panel
+    participant GW as API Gateway
+    participant OR as Orchestrator
+    participant AG as Agent Services (×5)
+
+    Dev->>EXT: run CodeSentinel: Review current file
+    EXT->>EXT: collect active file + unsaved buffer contents
+
+    alt gateway unreachable or offline
+        EXT-->>Dev: connection error, no review is run
+        Note over EXT: UC-2 exception flow — nothing is queued locally
+    else online
+        EXT->>GW: POST /v1/reviews (Bearer cs_live_… API key)
+        GW->>GW: authenticate key, resolve user + organization
+        GW->>OR: POST /internal/v1/review-jobs (trigger = vscode_on_demand)
+        OR-->>GW: 202 { reviewId, eventsUrl }
+        GW-->>EXT: 202 accepted
+        EXT->>WV: open panel, show reviewing…
+
+        EXT->>GW: GET /v1/reviews/{id}/events (SSE)
+
+        par agents run in parallel
+            OR->>AG: POST /v1/review
+            AG-->>OR: findings[]
+        end
+
+        loop as each agent returns
+            OR-->>GW: agent_completed
+            GW-->>EXT: SSE agent_completed { agent, findingsCount, latencyMs }
+            EXT->>WV: fill in that agent's section
+        end
+
+        OR-->>GW: combined report
+        GW-->>EXT: SSE review_completed
+        EXT->>WV: render findings grouped by agent and severity (FR-VSC-02)
+        WV-->>Dev: report with Apply fix and Auto-fix style actions
+    end
+
+    opt developer clicks "Auto-fix style" (FR-VSC-04)
+        Dev->>WV: Auto-fix style
+        WV->>GW: POST /v1/reviews/{id}/style-fixes
+        GW-->>WV: patched file contents (no LLM in this path, NFR-07)
+        WV->>EXT: write into the open editor buffer
+        EXT-->>Dev: buffer updated, still unsaved
+    end
+
+    Note over Dev,EXT: applying a single AI fix follows UC-3

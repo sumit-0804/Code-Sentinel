@@ -1,0 +1,49 @@
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#dce7f7","primaryBorderColor":"#4a6fa5","lineColor":"#6b7280","primaryTextColor":"#1a1a1a","actorBkg":"#dce7f7","actorBorder":"#4a6fa5","noteBkgColor":"#fffdf2","noteBorderColor":"#e0cf92"},"sequence":{"actorMargin":46,"width":168,"boxMargin":10}} }%%
+sequenceDiagram
+    autonumber
+    actor Dev as PR Author
+    participant CL as GitHub PR / VS Code panel
+    participant GW as API Gateway
+    participant GH as GitHub API
+    participant DB as PostgreSQL
+
+    Note over Dev,CL: precondition — the review produced at least one<br/>suggestion whose confidence cleared the threshold
+
+    Dev->>CL: open the suggested-change comment or finding card
+    CL-->>Dev: show original snippet vs suggested snippet
+
+    alt developer clicks Commit suggestion (GitHub)
+        Dev->>CL: Commit suggestion
+        CL->>GW: POST /v1/findings/{id}/suggestion/accept (target = github_branch)
+        GW->>DB: check suggestion state is proposed
+        alt already resolved or superseded by a newer commit
+            DB-->>GW: state = accepted / rejected / superseded
+            GW-->>CL: 409 conflict
+            CL-->>Dev: this suggestion is no longer current
+        else still open
+            GW->>GH: commit the suggestion to the PR branch
+            GH-->>GW: new commit sha
+            GW->>DB: state = accepted, resolved_by_user_id, commit sha
+            GW-->>CL: 200 { state: accepted, commitSha }
+            CL-->>Dev: change applied to the branch
+        end
+
+    else developer clicks Apply fix (VS Code)
+        Dev->>CL: Apply fix
+        CL->>CL: write the snippet into the open editor buffer
+        CL->>GW: POST /v1/findings/{id}/suggestion/accept (target = editor_buffer)
+        GW->>DB: state = accepted, resolved_by_user_id
+        GW-->>CL: 200 recorded
+        CL-->>Dev: buffer updated, nothing pushed to GitHub
+
+    else developer rejects, or does nothing
+        Dev->>CL: Reject (optionally with a reason)
+        CL->>GW: POST /v1/findings/{id}/suggestion/reject
+        GW->>DB: state = rejected, reason
+        GW-->>CL: 200 recorded
+        CL-->>Dev: finding stays visible, no code changed
+    end
+
+    Note over GW,DB: CodeSentinel never writes to a branch on its own.<br/>Acceptance is the only path to a commit (FR-GH-04, AC-04).
+
+    Note over DB: on the next review of this file the finding is<br/>matched by dedupe_key and reported as resolved

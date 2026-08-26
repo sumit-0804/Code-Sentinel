@@ -1,0 +1,72 @@
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#e3f0fb","primaryBorderColor":"#2f7fb8","lineColor":"#6b7280","primaryTextColor":"#1a1a1a"}} }%%
+classDiagram
+    direction TB
+
+    class LlmClient {
+        -chain : LlmProvider[]
+        -policy : ProviderPolicy
+        +complete(LlmRequest) LlmResponse
+        -tryNext(LlmRequest, depth) LlmResponse
+    }
+
+    class ProviderPolicy {
+        +timeoutMs : int
+        +maxRetries : int
+        +retryOn : ErrorClass[]
+        +shouldFallback(error) boolean
+    }
+
+    class LlmProvider {
+        <<interface>>
+        +name() string
+        +complete(LlmRequest) LlmResponse
+        +isAvailable() boolean
+    }
+
+    class OpenRouterProvider {
+        -apiKey : string
+        +complete(LlmRequest) LlmResponse
+    }
+
+    class GeminiFlashProvider {
+        -apiKey : string
+        +complete(LlmRequest) LlmResponse
+    }
+
+    class GroqProvider {
+        -apiKey : string
+        +complete(LlmRequest) LlmResponse
+    }
+
+    class OllamaProvider {
+        -baseUrl : string
+        +complete(LlmRequest) LlmResponse
+    }
+
+    class LlmRequest {
+        +systemPrompt : string
+        +diffHunks : string
+        +maxTokens : int
+        +temperature : number
+    }
+
+    class LlmResponse {
+        +text : string
+        +provider : string
+        +model : string
+        +fallbackDepth : int
+        +promptTokens : int
+        +completionTokens : int
+    }
+
+    LlmClient *-- ProviderPolicy
+    LlmClient o-- LlmProvider : ordered chain
+    LlmProvider <|.. OpenRouterProvider
+    LlmProvider <|.. GeminiFlashProvider
+    LlmProvider <|.. GroqProvider
+    LlmProvider <|.. OllamaProvider
+    LlmClient ..> LlmRequest
+    LlmClient ..> LlmResponse
+
+    note for LlmClient "Fallback order: OpenRouter → Gemini Flash → Groq → Ollama.\nOn failure, timeout or rate-limit the client moves to the next\nprovider and records fallbackDepth on the agent run (FR-LOG-02)."
+    note for OllamaProvider "Runs locally. Keeps development inside free tiers\nand lets the stack work with no network (NFR-11, NFR-14)."
