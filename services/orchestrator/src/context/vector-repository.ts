@@ -31,7 +31,7 @@ export class ChromaVectorRepository implements VectorRepository {
   async querySimilar(
     _finding: Finding,
     _organizationId: string,
-    _limit = 5,
+    _limit = 3,
   ): Promise<SimilarPastIssue[]> {
     throw new Error("ChromaVectorRepository.querySimilar is not implemented yet");
   }

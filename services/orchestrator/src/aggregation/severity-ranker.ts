@@ -1,6 +1,6 @@
 import type { Finding, Severity } from "../types.js";
 
-const SEVERITY_WEIGHT: Record<Severity, number> = {
+export const SEVERITY_WEIGHT: Record<Severity, number> = {
   critical: 3,
   warning: 2,
   info: 1,

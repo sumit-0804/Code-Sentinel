@@ -24,7 +24,8 @@ export class SimilarIssueLookup {
             this.limit,
           );
           return { ...finding, similarPastIssues };
-        } catch {
+        } catch (error) {
+          console.warn("similar issue lookup failed", { ruleId: finding.ruleId, error });
           return finding;
         }
       }),
@@ -35,8 +36,9 @@ export class SimilarIssueLookup {
     for (const finding of findings) {
       try {
         await this.vectors.index(finding, organizationId);
-      } catch {
+      } catch (error) {
         // Best effort: a failed index write should not affect the current review.
+        console.warn("finding index write failed", { ruleId: finding.ruleId, error });
       }
     }
   }

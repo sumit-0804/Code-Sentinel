@@ -28,9 +28,19 @@ export function aggregate(input: AggregateInput): CombinedReport {
 
   return {
     reviewId: input.reviewId,
-    status: input.status ?? "completed",
+    status: input.status ?? deriveStatus(input.agentRuns),
     summary: buildReviewSummary(findings),
     findings,
     agentRuns: input.agentRuns,
   };
+}
+
+// A timed-out or failed agent still yields a report, marked partial (FR-ORC-02, NFR-04).
+// Only when no agent produced a result is the review failed.
+export function deriveStatus(agentRuns: AgentRunSummary[]): ReviewStatus {
+  const broken = agentRuns.filter((run) => run.status === "timed_out" || run.status === "failed");
+  if (broken.length === 0) return "completed";
+
+  const succeeded = agentRuns.some((run) => run.status === "succeeded");
+  return succeeded ? "partial" : "failed";
 }
