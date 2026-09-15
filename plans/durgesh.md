@@ -82,14 +82,16 @@ Requirement: FR-ORC-06. Agents report true confidence and do not filter (`agent.
 
 Lets Sumit test fan-out and Ayush test the gateway before real agents exist.
 
-- [ ] `services/mock-agent` built on `@code-sentinel/agent-kit` (if not merged yet, plain Express
-      and switch later).
-- [ ] Implements `POST /v1/review`, `GET /v1/capabilities`, `GET /healthz` exactly as `agent.yaml`.
-- [ ] Env-controlled behaviour: `MOCK_AGENT_KIND`, `MOCK_DELAY_MS`, `MOCK_FAIL=500|timeout|malformed`,
+- [x] `services/mock-agent` built on `@code-sentinel/agent-kit` (if not merged yet, plain Express
+      and switch later). (`agent-kit` not merged yet; built on plain Express, switch when Tej ships it.)
+- [x] Implements `POST /v1/review`, `GET /v1/capabilities`, `GET /healthz` exactly as `agent.yaml`.
+- [x] Env-controlled behaviour: `MOCK_AGENT_KIND`, `MOCK_DELAY_MS`, `MOCK_FAIL=500|timeout|malformed`,
       `MOCK_FINDINGS_FILE` (JSON list of findings to return).
-- [ ] Ships 2–3 realistic finding sets (security, style) that include one cross-agent duplicate.
-- [ ] Dockerfile + entry for Vatsal's `docker-compose.yml` (send him the snippet).
-- [ ] README: how to run five instances on 8081–8085 for local fan-out testing.
+- [x] Ships 2–3 realistic finding sets (security, style) that include one cross-agent duplicate.
+      (security + logic share a CWE-89 finding on the same line, different ruleIds.)
+- [x] Dockerfile + entry for Vatsal's `docker-compose.yml` (send him the snippet). Snippet is in
+      `services/mock-agent/README.md` — **still needs to actually be sent to Vatsal.**
+- [x] README: how to run five instances on 8081–8085 for local fan-out testing.
 
 ## Phase 4 — Orchestrator persistence (Mon 28 Sep – Sat 3 Oct)
 

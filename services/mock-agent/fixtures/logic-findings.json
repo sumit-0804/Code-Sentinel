@@ -1,0 +1,21 @@
+[
+  {
+    "agent": "logic",
+    "ruleId": "logic/unsafe-query",
+    "title": "Unvalidated value used to build a query",
+    "description": "The Logic Agent independently flags the same unsafe query the Security Agent found.",
+    "location": { "filePath": "payments/retry_queue.py", "lineStart": 132, "lineEnd": 132 },
+    "severity": "warning",
+    "confidence": 0.81,
+    "cweId": "cwe-89"
+  },
+  {
+    "agent": "logic",
+    "ruleId": "logic/backoff-never-resets",
+    "title": "Backoff never resets between successful attempts",
+    "description": "The retry backoff grows monotonically even after a request succeeds.",
+    "location": { "filePath": "payments/retry_queue.py", "lineStart": 141, "lineEnd": 141 },
+    "severity": "warning",
+    "confidence": 0.7
+  }
+]

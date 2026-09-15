@@ -1,0 +1,26 @@
+[
+  {
+    "agent": "security",
+    "ruleId": "security/sql-injection",
+    "title": "SQL built from unsanitized input",
+    "description": "payment_id is interpolated directly into the query string.",
+    "location": { "filePath": "payments/retry_queue.py", "lineStart": 132, "lineEnd": 132 },
+    "severity": "critical",
+    "confidence": 0.93,
+    "cweId": "CWE-89"
+  },
+  {
+    "agent": "security",
+    "ruleId": "security/hardcoded-secret",
+    "title": "AWS access key committed in source",
+    "description": "An AWS key literal is present in a logging call.",
+    "location": { "filePath": "payments/retry_queue.py", "lineStart": 98, "lineEnd": 98 },
+    "severity": "critical",
+    "confidence": 0.97,
+    "suggestion": {
+      "kind": "ai_suggested",
+      "originalSnippet": "logger.info(f\"key={AWS_ACCESS_KEY}\")",
+      "suggestedSnippet": "logger.info(\"key=***redacted***\")"
+    }
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "agent": "style",
+    "ruleId": "style/eslint/no-unused-vars",
+    "title": "Unused variable 'conn'",
+    "description": "eslint: no-unused-vars",
+    "location": { "filePath": "payments/pool.ts", "lineStart": 22, "lineEnd": 22 },
+    "severity": "info",
+    "confidence": 1,
+    "suggestion": {
+      "kind": "deterministic",
+      "originalSnippet": "const conn = pool.acquire();",
+      "suggestedSnippet": ""
+    }
+  },
+  {
+    "agent": "style",
+    "ruleId": "style/prettier/formatting",
+    "title": "File is not formatted",
+    "description": "prettier --check failed for this file.",
+    "location": { "filePath": "payments/pool.ts", "lineStart": 1, "lineEnd": 1 },
+    "severity": "info",
+    "confidence": 1,
+    "suggestion": {
+      "kind": "deterministic",
+      "originalSnippet": "function processBatch(payments){",
+      "suggestedSnippet": "function processBatch(payments) {"
+    }
+  }
+]
