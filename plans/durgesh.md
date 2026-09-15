@@ -52,14 +52,16 @@ You are ahead of the original schedule, so this plan pulls some later work forwa
 
 ## Phase 1 — Finish tests for existing code (Mon 14 – Wed 16 Sep)
 
-- [ ] `severity-ranker.test.ts` — critical before warning before info; confidence order inside a band; input array not mutated.
-- [ ] `review-summary.test.ts` — counts per severity; `autoFixedCount` vs `suggestedFixCount`.
-- [ ] `aggregate` test — dedupe + rank + summary together; `status` defaults to `completed`.
-- [ ] `similar-issue-lookup.test.ts` — with a fake `VectorRepository`: results attached; a throwing
+- [x] `severity-ranker.test.ts` — critical before warning before info; confidence order inside a band; input array not mutated.
+- [x] `review-summary.test.ts` — counts per severity; `autoFixedCount` vs `suggestedFixCount`.
+- [x] `aggregate` test — dedupe + rank + summary together; `status` defaults to `completed`.
+- [x] `similar-issue-lookup.test.ts` — with a fake `VectorRepository`: results attached; a throwing
       repository returns findings unchanged; `index` swallows errors.
-- [ ] Edge case in `FindingAggregator`: same issue from two agents with **different `ruleId`s** is
+- [x] Edge case in `FindingAggregator`: same issue from two agents with **different `ruleId`s** is
       not merged today. Decide with Sumit whether FR-ORC-03 ("same issue type") needs a
-      normalised issue key; add a test either way.
+      normalised issue key; add a test either way. (Resolved on `main`: `FindingAggregator` now
+      keys on CWE id, else `ruleId` with the agent prefix stripped. Covered by
+      `finding-aggregator.test.ts`.)
 - [ ] When contracts merges, switch imports to `@code-sentinel/contracts`.
 
 ## Phase 2 — Confidence threshold (Thu 17 – Sat 19 Sep)
