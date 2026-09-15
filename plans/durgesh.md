@@ -68,12 +68,15 @@ You are ahead of the original schedule, so this plan pulls some later work forwa
 
 Requirement: FR-ORC-06. Agents report true confidence and do not filter (`agent.yaml`).
 
-- [ ] `src/threshold/apply-threshold.ts` — pure function taking the report and threshold (default
+- [x] `src/threshold/apply-threshold.ts` — pure function taking the report and threshold (default
       0.8). Findings below the threshold stay in the report but are marked as not postable
       (check `common.yaml` / `orchestrator.yaml` for the exact field; if none exists, raise a
-      contract change with Sumit instead of adding one locally).
-- [ ] Deterministic Style fixes are not dropped by the threshold (NFR-07) — confirm with Nevil.
-- [ ] Tests: exactly at threshold, below, above, empty report.
+      contract change with Sumit instead of adding one locally). No such field exists yet, so
+      "postable" is returned as a `Set<Finding>` by object reference, not a contract field —
+      flagged in the orchestrator README for Sumit to weigh in on before the graph wiring needs it.
+- [x] Deterministic Style fixes are not dropped by the threshold (NFR-07) — implemented per spec
+      (always postable); **still needs Nevil to confirm** this matches the Style Agent's output.
+- [x] Tests: exactly at threshold, below, above, empty report.
 
 ## Phase 3 — Mock agent service (Mon 21 – Fri 25 Sep)
 

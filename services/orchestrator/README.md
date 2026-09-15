@@ -18,13 +18,17 @@ Class design: [`docs/design/diagrams/mermaid/class_orchestrator.mmd`](../../docs
 | Aggregate step | `aggregation/index.ts` → `aggregate()` | working |
 | Context lookup (FR-ORC-05) | `context/similar-issue-lookup.ts` | interface + wiring, no vectors |
 | Vector store (FR-VDB-01/02) | `context/vector-repository.ts` | interface + Chroma stub |
+| Confidence threshold (FR-ORC-06) | `threshold/apply-threshold.ts` | working |
+
+`applyThreshold` returns eligible findings as a `Set<Finding>` by object reference rather than a
+field on `Finding` itself — no `postable`-style field exists yet in `common.yaml`. Ask Sumit before
+adding one if the graph node needs this to survive serialization.
 
 ## Not started yet
 
 - `ReviewJobController` + HTTP server (`/internal/v1/review-jobs`)
 - `ReviewGraph` / `ReviewState` LangGraph wiring and `FanOutNode`
 - `AgentClient` and the per-agent timeout
-- `ThresholdNode` (confidence threshold pass, FR-ORC-06)
 - `ReviewRepository` (PostgreSQL persistence)
 - LLM abstraction layer
 
