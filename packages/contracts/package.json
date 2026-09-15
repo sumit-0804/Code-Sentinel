@@ -1,14 +1,24 @@
 {
-  "name": "@code-sentinel/orchestrator",
+  "name": "@code-sentinel/contracts",
   "version": "0.0.0",
   "private": true,
-  "description": "LangGraph orchestrator: fan-out to agents, aggregation, de-duplication, severity ranking, context lookup.",
+  "description": "Shared zod schemas and TypeScript types mirroring docs/design/openapi.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./examples": {
+      "types": "./dist/examples.d.ts",
+      "import": "./dist/examples.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -16,7 +26,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@code-sentinel/contracts": "*"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
