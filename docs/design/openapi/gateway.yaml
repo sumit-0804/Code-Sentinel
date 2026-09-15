@@ -101,6 +101,14 @@ paths:
                   action:
                     type: string
                     enum: [review_started, duplicate_ignored, event_ignored, repository_disabled]
+        '400':
+          description: >
+            Correctly signed, but X-GitHub-Event or X-GitHub-Delivery is missing (missing_header), or
+            the body is not JSON or not a valid pull_request payload (invalid_payload).
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/Error'
         '401':
           description: Signature verification failed.
           content:
@@ -109,6 +117,15 @@ paths:
                 $ref: './common.yaml#/components/schemas/Error'
         '429':
           $ref: './common.yaml#/components/responses/TooManyRequests'
+        '502':
+          description: >
+            The orchestrator could not be reached or rejected the job (orchestrator_unavailable).
+            GitHub marks the delivery failed; redelivering it is safe because the delivery id is the
+            idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: './common.yaml#/components/schemas/Error'
 
   # -------------------------------------------------------------------------
   # UC-2 — On-demand review from VS Code / dashboard
