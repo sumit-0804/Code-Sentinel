@@ -3,50 +3,43 @@ classDiagram
     direction TB
 
     class LlmClient {
-        -chain : LlmProvider[]
-        -policy : ProviderPolicy
+        -provider : GeminiProvider
         +complete(LlmRequest) LlmResponse
-        -tryNext(LlmRequest, depth) LlmResponse
+        -checkInputBudget(LlmRequest) void
     }
 
-    class ProviderPolicy {
-        +timeoutMs : int
-        +maxRetries : int
-        +retryOn : ErrorClass[]
-        +shouldFallback(error) boolean
-    }
-
-    class LlmProvider {
-        <<interface>>
-        +name() string
-        +complete(LlmRequest) LlmResponse
-        +isAvailable() boolean
-    }
-
-    class OpenRouterProvider {
+    class GeminiProvider {
         -apiKey : string
+        -model : string
         +complete(LlmRequest) LlmResponse
+        -parseRetryDelay(error) int
     }
 
-    class GeminiFlashProvider {
+    class GeminiEmbedder {
         -apiKey : string
-        +complete(LlmRequest) LlmResponse
+        -model : string
+        -dimensions : int
+        +embedMany(texts) number[][]
     }
 
-    class GroqProvider {
-        -apiKey : string
-        +complete(LlmRequest) LlmResponse
+    class QuotaBudget {
+        -requestsPerMinute : int
+        -tokensPerMinute : int
+        -requestsPerDay : int
+        -headroom : number
+        +tryReserve(QuotaCost) ReserveResult
+        +settle(Reservation, actual) void
+        +release(Reservation) void
     }
 
-    class OllamaProvider {
-        -baseUrl : string
-        +complete(LlmRequest) LlmResponse
+    class ReviewPlanner {
+        +planLlmReview(files, limits) LlmReviewPlan
     }
 
     class LlmRequest {
         +systemPrompt : string
         +diffHunks : string
-        +maxTokens : int
+        +maxOutputTokens : int
         +temperature : number
     }
 
@@ -54,19 +47,16 @@ classDiagram
         +text : string
         +provider : string
         +model : string
-        +fallbackDepth : int
         +promptTokens : int
         +completionTokens : int
     }
 
-    LlmClient *-- ProviderPolicy
-    LlmClient o-- LlmProvider : ordered chain
-    LlmProvider <|.. OpenRouterProvider
-    LlmProvider <|.. GeminiFlashProvider
-    LlmProvider <|.. GroqProvider
-    LlmProvider <|.. OllamaProvider
+    LlmClient *-- GeminiProvider
     LlmClient ..> LlmRequest
     LlmClient ..> LlmResponse
+    ReviewPlanner ..> QuotaBudget : estimated cost
+    LlmResponse ..> QuotaBudget : settles with token counts
+    GeminiEmbedder ..> QuotaBudget : embedding quota
 
-    note for LlmClient "Fallback order: OpenRouter → Gemini Flash → Groq → Ollama.\nOn failure, timeout or rate-limit the client moves to the next\nprovider and records fallbackDepth on the agent run (FR-LOG-02)."
-    note for OllamaProvider "Runs locally. Keeps development inside free tiers\nand lets the stack work with no network (NFR-11, NFR-14)."
+    note for LlmClient "Gemini is the only provider, no fallback chain.<br/>Separate dev and prod API keys (NFR-11, NFR-14).<br/>Over-budget input: file skipped, never split."
+    note for QuotaBudget "Reserved by the orchestrator before fan-out,<br/>so production never receives a 429.<br/>Daily window resets at midnight Pacific."

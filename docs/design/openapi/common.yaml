@@ -72,6 +72,46 @@ components:
           type: string
           description: Optional surrounding lines, when the agent needs more than the hunk to judge.
 
+    SkippedFile:
+      type: object
+      required: [path, reason]
+      description: >
+        A file that was not analyzed. Large diffs are skipped, never split (see plans/large-diffs.md).
+      properties:
+        path:
+          type: string
+        reason:
+          type: string
+          enum: [unsupported_language, too_large, generated_file, binary, over_budget]
+          description: >
+            too_large means the file alone exceeds the size limit; over_budget means it fit on its own
+            but the review's LLM token budget was already spent.
+
+    ReportSkippedFile:
+      allOf:
+        - $ref: '#/components/schemas/SkippedFile'
+        - type: object
+          properties:
+            agents:
+              type: array
+              description: Agents that skipped the file. Absent when the gateway dropped it before fan-out.
+              items:
+                $ref: '#/components/schemas/AgentKind'
+
+    ReviewCoverage:
+      type: object
+      required: [filesTotal, filesReviewed, changedLinesTotal, changedLinesReviewed]
+      description: A file counts as reviewed when at least one agent that succeeded analyzed it.
+      properties:
+        filesTotal:
+          type: integer
+        filesReviewed:
+          type: integer
+        changedLinesTotal:
+          type: integer
+        changedLinesReviewed:
+          type: integer
+
     Suggestion:
       type: object
       required: [kind, originalSnippet, suggestedSnippet]
@@ -183,9 +223,13 @@ components:
           minimum: 0
         llmProvider:
           type: string
-          description: Which provider in the fallback chain actually answered (NFR-11, NFR-14).
+          description: Always gemini; there is no provider fallback (NFR-11, NFR-14).
+          example: gemini
         errorCode:
           type: string
+          description: >
+            llm_quota_exhausted when the orchestrator could not fit this agent into the Gemini quota
+            before the deadline; the run is then skipped and the review is partial.
 
     ReviewSummary:
       type: object
@@ -213,7 +257,9 @@ components:
         status:
           type: string
           enum: [queued, running, completed, partial, failed]
-          description: partial means at least one agent timed out or failed but a report was still produced.
+          description: >
+            partial means at least one agent timed out, failed or was deferred by the Gemini quota
+            but a report was still produced. Skipped files alone do not make a review partial.
         repositoryFullName:
           type: string
         pullRequestNumber:
@@ -233,6 +279,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AgentRunSummary'
+        skippedFiles:
+          type: array
+          description: Files not analyzed, one entry per path and reason, from the gateway and every agent.
+          items:
+            $ref: '#/components/schemas/ReportSkippedFile'
+        coverage:
+          $ref: '#/components/schemas/ReviewCoverage'
         durationMs:
           type: integer
         completedAt:

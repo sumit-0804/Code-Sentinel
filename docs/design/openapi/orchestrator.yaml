@@ -241,8 +241,18 @@ components:
         files:
           type: array
           minItems: 1
+          description: >
+            Files that passed the gateway filter. When every file is filtered out the gateway finishes
+            the review itself with an empty report instead of calling the orchestrator.
           items:
             $ref: './common.yaml#/components/schemas/ChangedFile'
+        skippedFiles:
+          type: array
+          description: >
+            Files the gateway dropped before fan-out (binary, generated or vendored, no patch from
+            GitHub). Carried into CombinedReport.skippedFiles so the report shows what was not reviewed.
+          items:
+            $ref: './common.yaml#/components/schemas/SkippedFile'
         enabledAgents:
           type: array
           description: >
