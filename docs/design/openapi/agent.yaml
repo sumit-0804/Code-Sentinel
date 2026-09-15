@@ -94,8 +94,8 @@ paths:
                 $ref: './common.yaml#/components/schemas/Error'
         '503':
           description: >
-            A dependency the agent needs is unavailable (sandbox, or every LLM provider in the
-            fallback chain). The orchestrator records this as a failed agent run and continues.
+            A dependency the agent needs is unavailable (sandbox, or Gemini is down or returned a
+            quota error). The orchestrator records this as a failed agent run and continues.
           content:
             application/json:
               schema:
@@ -183,9 +183,18 @@ components:
           type: object
           description: Agent-specific switches, ignored by agents that do not recognise them.
           additionalProperties: true
+          properties:
+            deadlineMs:
+              type: integer
+              minimum: 0
+              description: >
+                Time the agent has left before the orchestrator abandons the call. The agent stops
+                starting new files once it passes and returns what it has, listing the rest as
+                over_budget skips.
           example:
             autoFix: true
             includeDocstringDrafts: true
+            deadlineMs: 18000
 
     AgentReviewResponse:
       type: object
@@ -209,27 +218,21 @@ components:
           type: array
           description: Files the agent chose not to analyze, with the reason.
           items:
-            type: object
-            required: [path, reason]
-            properties:
-              path:
-                type: string
-              reason:
-                type: string
-                enum: [unsupported_language, too_large, generated_file, binary]
+            $ref: './common.yaml#/components/schemas/SkippedFile'
         llm:
           type: object
           description: Absent for the Style Agent, which must make no LLM call at all (NFR-07).
           properties:
             provider:
               type: string
-              example: openrouter
+              example: gemini
             model:
               type: string
+              example: gemini-3.5-flash-lite
             fallbackDepth:
               type: integer
               minimum: 0
-              description: 0 when the primary provider answered; 1 or more after a fallback.
+              description: Kept for the schema and the agent_runs column; always 0 since Gemini is the only provider.
             promptTokens:
               type: integer
             completionTokens:
@@ -255,6 +258,12 @@ components:
           type: boolean
         maxDiffBytes:
           type: integer
+          description: Whole request body cap; larger requests get 413.
+        maxFileTokens:
+          type: integer
+          description: >
+            Per-file limit in estimated tokens (~3 bytes each). A larger file is returned as a
+            too_large skip, never split. The orchestrator plans batches with it.
         rules:
           type: array
           description: Rule identifiers this agent can emit, for documentation and test assertions.

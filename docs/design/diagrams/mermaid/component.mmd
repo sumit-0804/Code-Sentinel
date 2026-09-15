@@ -25,7 +25,7 @@ flowchart TB
         direction LR
         API["ReviewController<br/><i>POST /v1/review</i>"]
         ANA["Analyzer<br/><i>agent-specific rules</i>"]
-        LLMC["LlmClient<br/><i>provider fallback chain</i>"]
+        LLMC["LlmClient<br/><i>Gemini client + quota budget</i>"]
         SBX["SandboxRunner<br/><i>Style Agent only</i>"]
     end
 
