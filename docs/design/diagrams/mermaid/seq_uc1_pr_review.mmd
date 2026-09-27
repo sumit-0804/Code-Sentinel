@@ -51,7 +51,8 @@ sequenceDiagram
     OR->>VDB: query similar past issues
     VDB-->>OR: similar findings + resolutions (FR-ORC-05)
     OR->>DB: persist review, agent_runs, findings, suggestions
-    OR-->>GW: combined report (status = partial)
+    GW->>OR: GET /internal/v1/review-jobs/{jobId} every 2 s
+    OR-->>GW: job with the combined report (status = partial)
 
     GW->>GH: update Check Run with pass / fail / neutral (FR-GH-02)
     GW->>GH: post inline suggested changes for findings ≥ threshold (FR-GH-03)
