@@ -225,7 +225,8 @@ components:
           type: string
           description: >
             groq, or gemini when Groq's quota could not take the call or a Groq call failed
-            (NFR-11, NFR-14). Absent for the Style Agent.
+            (NFR-11, NFR-14); "groq,gemini" when the agent's batches were split across both.
+            Absent for the Style Agent and for runs that made no LLM call.
           example: groq
         errorCode:
           type: string

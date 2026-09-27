@@ -191,10 +191,18 @@ components:
                 Time the agent has left before the orchestrator abandons the call. The agent stops
                 starting new files once it passes and returns what it has, listing the rest as
                 over_budget skips.
+            llmProvider:
+              type: string
+              enum: [groq, gemini]
+              description: >
+                The provider whose quota the orchestrator reserved for this request. Set only for
+                LLM agents. When absent the agent makes no LLM call (rule-based checks only). A
+                failed Groq call may still be retried once on Gemini, reported in llm.fallbackDepth.
           example:
             autoFix: true
             includeDocstringDrafts: true
-            deadlineMs: 18000
+            deadlineMs: 43000
+            llmProvider: groq
 
     AgentReviewResponse:
       type: object
