@@ -94,8 +94,8 @@ paths:
                 $ref: './common.yaml#/components/schemas/Error'
         '503':
           description: >
-            A dependency the agent needs is unavailable (sandbox, or Gemini is down or returned a
-            quota error). The orchestrator records this as a failed agent run and continues.
+            A dependency the agent needs is unavailable (sandbox, or no LLM provider could answer:
+            Groq failed and Gemini is down or returned a quota error). The orchestrator records this as a failed agent run and continues.
           content:
             application/json:
               schema:
@@ -225,14 +225,17 @@ components:
           properties:
             provider:
               type: string
-              example: gemini
+              description: The provider that answered, groq or gemini.
+              example: groq
             model:
               type: string
-              example: gemini-3.5-flash-lite
+              example: openai/gpt-oss-120b
             fallbackDepth:
               type: integer
               minimum: 0
-              description: Kept for the schema and the agent_runs column; always 0 since Gemini is the only provider.
+              description: >
+                0 when the assigned provider answered; 1 when a Groq call failed and Gemini answered
+                instead. Stored in agent_runs.llm_fallback_depth.
             promptTokens:
               type: integer
             completionTokens:

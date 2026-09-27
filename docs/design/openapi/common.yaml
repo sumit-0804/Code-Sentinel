@@ -223,13 +223,15 @@ components:
           minimum: 0
         llmProvider:
           type: string
-          description: Always gemini; there is no provider fallback (NFR-11, NFR-14).
-          example: gemini
+          description: >
+            groq, or gemini when Groq's quota could not take the call or a Groq call failed
+            (NFR-11, NFR-14). Absent for the Style Agent.
+          example: groq
         errorCode:
           type: string
           description: >
-            llm_quota_exhausted when the orchestrator could not fit this agent into the Gemini quota
-            before the deadline; the run is then skipped and the review is partial.
+            llm_quota_exhausted when the orchestrator could not fit this agent into the Groq or the
+            Gemini quota before the deadline; the run is then skipped and the review is partial.
 
     ReviewSummary:
       type: object
