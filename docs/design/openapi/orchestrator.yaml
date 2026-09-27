@@ -267,7 +267,10 @@ components:
           default: 20000
           minimum: 1000
           maximum: 120000
-          description: Per-agent budget. On expiry the orchestrator proceeds with partial results (NFR-02).
+          description: >
+            Per-agent budget. On expiry the orchestrator proceeds with partial results (NFR-02).
+            LLM agents get at least the orchestrator's LLM_AGENT_TIMEOUT_MS (default 45000),
+            because a batch routed to Gemini can take over 20 seconds on the free tier.
         includeSimilarPastIssues:
           type: boolean
           default: true
